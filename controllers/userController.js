@@ -126,7 +126,7 @@ const transporter = nodemailer.createTransport({
 //       if (email) {
 //         try {
 //           await transporter.sendMail({
-//             from: '"Bussibees" <noreply@bussibees.com>',
+//             from: '"Panchal Pragati" <noreply@panchalsamaj.online>',
 //             to: email,
 //             subject: "Your OTP for Registration",
 //             text: `Your OTP for registration is ${otp}. It will expire in 5 minutes.`,
@@ -929,16 +929,16 @@ exports.ForgotPassword = async (req, res) => {
 
     try {
       await transporter.sendMail({
-        from: '"Bussibees" <noreply@bussibees.com>',
+        from: '"Panchal Pragati" <noreply@panchalsamaj.online>',
         to: normalizedEmail, 
-        subject: "Password Reset OTP - Bussibees",
+        subject: "Password Reset OTP - Panchal Pragati",
         html: `
           <div style="font-family: Arial, sans-serif; font-size: 16px;">
             <p>Hello,</p>
             <p>Your OTP for password reset is <b>${otpCode}</b>.</p>
             <p>This OTP is valid for <b>5 minutes</b>.</p>
             <br>
-            <p>Thank you,<br>Bussibees Team</p>
+            <p>Thank you,<br>Panchal Pragati Team</p>
           </div>
         `,
       });
