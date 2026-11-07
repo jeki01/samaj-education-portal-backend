@@ -399,20 +399,23 @@ exports.UserScheduleTests = async (req, res) => {
           "Asia/Kolkata"
         );
 
+        const testDate = moment(test.scheduleDate, "DD-MM-YYYY");
+
         if (completedResult) {
           showTest = true; // always show completed tests
         } else if (isPurchased) {
-          const testDate = moment(test.scheduleDate, "DD-MM-YYYY");
           showTest = testDate.isSameOrAfter(now, "day");
         } else {
-          showTest = testDateTime.isAfter(now);
+          // Show upcoming tests too (same day or future date), not just live ones
+          showTest = testDate.isSameOrAfter(now, "day");
         }
 
         if (!showTest) return null;
 
-        // ✅ NEW CONDITION (IMPROVED):
+        // isUpcoming: exam time hasn't arrived yet (countdown needed)
+        const isUpcoming = testDateTime.isValid() && testDateTime.isAfter(now);
+
         // Purchased, not completed, and schedule date has PASSED (strictly before today)
-        const testDate = moment(test.scheduleDate, "DD-MM-YYYY");
         const today = now.clone().startOf("day");
 
         if (
@@ -447,6 +450,7 @@ exports.UserScheduleTests = async (req, res) => {
           purchased: completedResult ? false : isPurchased,
           testSeriesId: testSeriesId,
           completed: completedResult ? true : false,
+          isUpcoming: completedResult ? false : isUpcoming,
           ...(completedResult
             ? {
                 totalQuestions: completedResult.totalQuestions,
