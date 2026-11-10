@@ -18,4 +18,7 @@ router.get('/usercompletdtest',auth, schduletestController.userStatuscompletd);
 router.post("/buyTest", auth,schduletestController.buyScheduleTest);
 router.get("/test/phonepe-status/:orderId", schduletestController.phonepeStatusTest);
 router.get("/test/check-payment-status/:orderId", schduletestController.checkPaymentStatusTest);
+router.get("/competition-report/:testId", auth, schduletestController.competitionReport);
+router.get("/checkExamStatus/:testId", schduletestController.checkExamStatus);
+router.put("/toggleExamStatus/:id", auth, schduletestController.toggleExamStatus);
 module.exports = router;

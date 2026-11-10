@@ -33,6 +33,8 @@ exports.createTest = async (req, res) => {
       testSeries,
       scheduleDate,
       scheduleTime,
+      scheduleEndDate,
+      scheduleEndTime,
       totalExamTime,
       marksPerQuestion,
       negativeMarkings,
@@ -177,6 +179,8 @@ exports.createTest = async (req, res) => {
         negativeMarkings: negativeMarkings || existing.negativeMarkings,
         scheduleDate: scheduleDate || existing.scheduleDate,
         scheduleTime: scheduleTime || existing.scheduleTime,
+        scheduleEndDate: scheduleEndDate !== undefined ? scheduleEndDate : existing.scheduleEndDate,
+        scheduleEndTime: scheduleEndTime !== undefined ? scheduleEndTime : existing.scheduleEndTime,
         totalExamTime: totalExamTime || existing.totalExamTime,
         testSeries:
           testSeriesArray.length > 0 ? testSeriesArray : existing.testSeries,
@@ -193,6 +197,8 @@ exports.createTest = async (req, res) => {
         negativeMarkings,
         scheduleDate,
         scheduleTime,
+        scheduleEndDate: scheduleEndDate || "",
+        scheduleEndTime: scheduleEndTime || "",
         totalExamTime,
         testSeries: testSeriesArray,
         createdBy,
@@ -362,10 +368,12 @@ exports.UserScheduleTests = async (req, res) => {
 
     const now = moment().tz("Asia/Kolkata");
 
-    // 🔹 Fetch all active tests
-    const tests = await ScheduleTest.find({ status: "Active" })
-      .populate("testSeries") // to access totalQuestions
-      .lean();
+    // 🔹 Fetch all active tests + inactive tests user is enrolled in
+    const allActiveTests = await ScheduleTest.find({ status: "Active" }).populate("testSeries").lean();
+    const purchasedForInactive = await BuyTest.find({ userId, paymentStatus: true }).select("testId").lean();
+    const purchasedIds = purchasedForInactive.map(p => p.testId.toString());
+    const inactiveEnrolledTests = await ScheduleTest.find({ status: "Inactive", _id: { $in: purchasedIds } }).populate("testSeries").lean();
+    const tests = [...allActiveTests, ...inactiveEnrolledTests];
 
     // 🔹 Fetch purchased tests for this user
     const purchased = await BuyTest.find({ userId, paymentStatus: true })
@@ -415,6 +423,17 @@ exports.UserScheduleTests = async (req, res) => {
         // isUpcoming: exam time hasn't arrived yet (countdown needed)
         const isUpcoming = testDateTime.isValid() && testDateTime.isAfter(now);
 
+        // isEnded: end date+time has passed
+        let isEnded = false;
+        if (test.scheduleEndDate && test.scheduleEndTime) {
+          const endDateTime = moment.tz(
+            `${test.scheduleEndDate} ${test.scheduleEndTime}`,
+            "DD-MM-YYYY HH:mm:ss",
+            "Asia/Kolkata"
+          );
+          isEnded = endDateTime.isValid() && endDateTime.isBefore(now);
+        }
+
         // Purchased, not completed, and schedule date has PASSED (strictly before today)
         const today = now.clone().startOf("day");
 
@@ -451,6 +470,8 @@ exports.UserScheduleTests = async (req, res) => {
           testSeriesId: testSeriesId,
           completed: completedResult ? true : false,
           isUpcoming: completedResult ? false : isUpcoming,
+          isEnded: completedResult ? false : isEnded,
+          isPaused: !completedResult && test.status === "Inactive",
           ...(completedResult
             ? {
                 totalQuestions: completedResult.totalQuestions,
@@ -852,5 +873,116 @@ exports.checkPaymentStatusTest = async (req, res) => {
       orderId: req.params.orderId,
       transactionId: null,
     });
+  }
+};
+const User = require('../models/user');
+
+exports.competitionReport = async (req, res) => {
+  try {
+    const { testId } = req.params;
+
+    // Test details
+    const test = await ScheduleTest.findById(testId).lean();
+    if (!test) return res.status(404).json({ message: "Test not found" });
+
+    // All enrolled users (paymentStatus: true)
+    const enrolled = await BuyTest.find({ testId, paymentStatus: true })
+      .populate('userId', 'firstName lastName email mobileNo')
+      .lean();
+
+    const enrolledCount = enrolled.length;
+
+    // All who attempted (have result)
+    const testSeriesId = test.testSeries?.[0]?._id;
+    const results = testSeriesId
+      ? await GovCourseResult.find({ testSeriesId }).populate('userId', 'firstName lastName email mobileNo').lean()
+      : [];
+
+    const attemptedCount = results.length;
+    const notAttempted = enrolledCount - attemptedCount;
+    const attemptedPct = enrolledCount > 0 ? Math.round((attemptedCount / enrolledCount) * 100) : 0;
+
+    // Leaderboard — sort by totalScore desc, assign rank
+    const leaderboard = results
+      .sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0))
+      .map((r, idx) => ({
+        rank: idx + 1,
+        name: r.userId ? `${r.userId.firstName || ''} ${r.userId.lastName || ''}`.trim() : 'Unknown',
+        email: r.userId?.email || '',
+        mobile: r.userId?.mobileNo || '',
+        totalScore: r.totalScore || 0,
+        maximumMark: r.maximumMark || 0,
+        correct: r.correct || 0,
+        wrong: r.wrong || 0,
+        skipped: r.skipped || 0,
+        percentage: r.percentage || 0,
+        timeTaken: r.testTakeTime || 0,
+      }));
+
+    // Enrolled but not attempted list
+    const attemptedUserIds = new Set(results.map(r => r.userId?._id?.toString()));
+    const notAttemptedList = enrolled
+      .filter(e => !attemptedUserIds.has(e.userId?._id?.toString()))
+      .map(e => ({
+        name: e.userId ? `${e.userId.firstName || ''} ${e.userId.lastName || ''}`.trim() : 'Unknown',
+        email: e.userId?.email || '',
+        mobile: e.userId?.mobileNo || '',
+      }));
+
+    // Exam status
+    const now = moment().tz('Asia/Kolkata');
+    const testDateTime = moment.tz(
+      `${test.scheduleDate} ${test.scheduleTime}`, 'DD-MM-YYYY HH:mm:ss', 'Asia/Kolkata'
+    );
+    const status = !testDateTime.isValid() ? 'unknown'
+      : testDateTime.isAfter(now) ? 'upcoming'
+      : 'live';
+
+    return res.status(200).json({
+      message: "Report fetched successfully",
+      data: {
+        testId,
+        examName: test.examName,
+        scheduleDate: test.scheduleDate,
+        scheduleTime: test.scheduleTime,
+        status,
+        stats: {
+          enrolled: enrolledCount,
+          attempted: attemptedCount,
+          notAttempted,
+          attemptedPct,
+        },
+        leaderboard,
+        notAttemptedList,
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error fetching competition report:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+exports.checkExamStatus = async (req, res) => {
+  try {
+    const { testId } = req.params;
+    const test = await ScheduleTest.findById(testId).select("status").lean();
+    if (!test) return res.status(404).json({ message: "Test not found" });
+    return res.status(200).json({ status: test.status });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.toggleExamStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const test = await ScheduleTest.findById(id);
+    if (!test) return res.status(404).json({ message: "Test not found" });
+    const newStatus = test.status === "Active" ? "Inactive" : "Active";
+    test.status = newStatus;
+    await test.save();
+    return res.status(200).json({ message: `Exam ${newStatus === "Active" ? "started" : "paused"}`, status: newStatus });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error", error: error.message });
   }
 };

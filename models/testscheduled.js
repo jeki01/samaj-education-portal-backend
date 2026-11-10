@@ -21,12 +21,20 @@ const ScheduleTestSchema = new mongoose.Schema({
   },
 
  scheduleDate: {
-      type: String, 
+      type: String,
       required: true,
     },
     scheduleTime: {
-      type: String, 
+      type: String,
       required: true,
+    },
+    scheduleEndDate: {
+      type: String,
+      default: ""
+    },
+    scheduleEndTime: {
+      type: String,
+      default: ""
     },
   totalExamTime: {
     type: String,

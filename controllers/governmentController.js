@@ -863,7 +863,6 @@ exports.submitGovCourseAnswer = async (req, res) => {
     const scheduleTest = await ScheduleTest.findOne({
       "testSeries._id": testSeriesObjId,
       "testSeries.topicQuestions._id": questionObjId,
-      status: "Active",
     }).lean();
 
     if (!scheduleTest) return res.status(404).json({ message: "Scheduled Test not found." });
@@ -981,7 +980,6 @@ exports.calculateGovCourseResult = async (req, res) => {
     // ✅ CASE 2: ScheduleTest (no courseId)
     const scheduleTest = await ScheduleTest.findOne({
       "testSeries._id": testSeriesObjId,
-      status: "Active"
     }).lean();
 
     if (!scheduleTest) return res.status(404).json({ message: 'Scheduled Test not found.' });
@@ -1395,7 +1393,6 @@ exports.getGovCourseAnswersWithResult = async (req, res) => {
     if (!courseId) {
       const scheduleTest = await ScheduleTest.findOne({
         "testSeries._id": new mongoose.Types.ObjectId(testSeriesId),
-        status: "Active"
       }).lean();
 
       if (!scheduleTest) return res.status(404).json({ message: "Scheduled Test not found." });
